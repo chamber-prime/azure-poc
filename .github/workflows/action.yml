@@ -22,6 +22,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Check vars are present
+        run: |
+          echo "client-id length: ${#CLIENT_ID}"
+          echo "tenant-id length: ${#TENANT_ID}"
+          echo "subscription-id length: ${#SUB_ID}"
+        env:
+          CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          SUB_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    
       - name: Runner egress IP
         run: curl -s --max-time 10 ifconfig.me || echo "no outbound internet"
 
