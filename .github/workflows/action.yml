@@ -1,0 +1,66 @@
+name: state-account-reachability
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true"
+
+jobs:
+  # Proves the account is reachable from a runner on the public internet.
+  # After the cutover this job is EXPECTED to fail. That failure is the point.
+  reachability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Runner egress IP
+        run: curl -s --max-time 10 ifconfig.me || echo "no outbound internet"
+
+      - name: Resolve storage hostname
+        run: |
+          getent hosts ${{ vars.SA_NAME }}.blob.core.windows.net || echo "DNS lookup failed"
+          echo "--- full CNAME chain ---"
+          dig +short ${{ vars.SA_NAME }}.blob.core.windows.net || true
+
+      - name: Azure login via OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: List state container
+        run: |
+          az storage blob list \
+            --account-name ${{ vars.SA_NAME }} \
+            --auth-mode login \
+            -c tfstate -o table
+
+  # Proves the Terraform backend itself works over the public endpoint.
+  terraform-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
+
+      - name: Terraform init and plan
+        env:
+          # The azurerm provider mints its own OIDC token from these.
+          ARM_OIDC_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
+          ARM_OIDC_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
+        run: |
+          terraform init
+          terraform plan -no-color
