@@ -50,7 +50,7 @@ resource "azurerm_storage_account" "state" {
   min_tls_version          = "TLS1_2"
 
   # This is the problem being recreated: reachable from anywhere on the internet.
-  public_network_access_enabled = true
+  public_network_access_enabled = false
 
   # Recovery net, so a botched cutover later is survivable.
   blob_properties {
